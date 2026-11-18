@@ -544,6 +544,46 @@ textarea {
   margin: 0;
 }
 
+/* Error de un campo: el input se marca y el mensaje va justo debajo. */
+input[aria-invalid='true'],
+select[aria-invalid='true'],
+textarea[aria-invalid='true'] {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+input[aria-invalid='true']:focus,
+select[aria-invalid='true']:focus,
+textarea[aria-invalid='true']:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgb(192 43 43 / 18%);
+}
+
+.field__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  color: var(--danger);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.field__error::before {
+  content: '!';
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: var(--white);
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
 .checkbox-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
@@ -1193,6 +1233,16 @@ th.cell-number {
   background: var(--warning-bg);
   color: var(--warning-text);
   border-color: #f0dca8;
+}
+
+.alert--info {
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  border-color: var(--primary-border);
+}
+
+.auth-card .alert {
+  margin-bottom: 0;
 }
 
 /* ---------- Modal ---------- */

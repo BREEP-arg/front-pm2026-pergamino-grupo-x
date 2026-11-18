@@ -14,11 +14,17 @@ export interface JwtPayload {
   iat?: number
 }
 
-/** El backend usa nombres de rol distintos a los del front. */
+/**
+ * El backend usa nombres de rol distintos a los del front. El claim `rol` del JWT trae
+ * ALUMNO / INSTRUCTOR / ADMINISTRADOR; el campo `role` de POST /api/auth/token (#27) los trae
+ * en inglés. Se aceptan los dos para no depender de qué versión del backend responde.
+ */
 const ROLE_FROM_BACKEND: Record<string, Role> = {
   ALUMNO: 'STUDENT',
+  STUDENT: 'STUDENT',
   INSTRUCTOR: 'INSTRUCTOR',
   ADMINISTRADOR: 'ADMIN',
+  ADMINISTRATOR: 'ADMIN',
 }
 
 export function roleFromBackend(rol: string | undefined): Role | null {

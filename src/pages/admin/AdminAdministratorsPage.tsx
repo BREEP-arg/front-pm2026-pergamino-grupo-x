@@ -1,49 +1,41 @@
 import { useState, type FormEvent } from 'react'
 import { createAdministrator, getAdministrators } from '../../api/administrators'
+import { FieldError, FormError } from '../../components/FieldError'
 import { ErrorState, LoadingState } from '../../components/States'
 import { useToast } from '../../components/useToast'
-import { fullName, validateEmail } from '../../utils/labels'
+import { fullName } from '../../utils/labels'
+import {
+  EMPTY_PERSON_FORM,
+  PERSON_FIELDS,
+  validatePersonForm,
+  type PersonField,
+  type PersonForm,
+} from '../../utils/personForm'
 import { useApiResource } from '../../utils/useApiResource'
-
-interface FormState {
-  firstName: string
-  lastName: string
-  email: string
-  password: string
-}
-
-const EMPTY_FORM: FormState = { firstName: '', lastName: '', email: '', password: '' }
+import { useFormErrors } from '../../utils/useFormErrors'
 
 export function AdminAdministratorsPage() {
   const { showToast } = useToast()
-  const [form, setForm] = useState<FormState>(EMPTY_FORM)
-  const [error, setError] = useState<string | null>(null)
+  const [form, setForm] = useState<PersonForm>(EMPTY_PERSON_FORM)
   const [busy, setBusy] = useState(false)
+  const errors = useFormErrors('new-administrator', PERSON_FIELDS)
+  const { fieldErrors, fieldId, inputProps } = errors
 
   const resource = useApiResource(() => getAdministrators(), [])
 
-  const updateField = (field: keyof FormState, value: string) => {
+  const updateField = (field: PersonField, value: string) => {
     setForm((current) => ({ ...current, [field]: value }))
-    setError(null)
+    errors.clearField(field)
   }
 
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!form.firstName.trim() || !form.lastName.trim()) {
-      setError('Ingresá nombre y apellido.')
-      return
-    }
-    if (!validateEmail(form.email.trim())) {
-      setError('Ingresá un email válido.')
-      return
-    }
-    if (form.password.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres.')
+    if (errors.showValidation(validatePersonForm(form))) {
       return
     }
 
     setBusy(true)
-    setError(null)
+    errors.reset()
     try {
       await createAdministrator({
         firstName: form.firstName.trim(),
@@ -52,10 +44,10 @@ export function AdminAdministratorsPage() {
         password: form.password,
       })
       showToast('Administrador creado.')
-      setForm(EMPTY_FORM)
+      setForm(EMPTY_PERSON_FORM)
       resource.reload()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'No se pudo crear el administrador.')
+      errors.showApiError(cause, 'No se pudo crear el administrador.')
     } finally {
       setBusy(false)
     }
@@ -80,41 +72,57 @@ export function AdminAdministratorsPage() {
         </div>
       </header>
 
-      <form className="panel form" onSubmit={handleCreate}>
+      <form className="panel form" onSubmit={handleCreate} noValidate>
         <h2>Dar de alta un administrador</h2>
         <div className="form-row">
           <label className="field">
             <span className="field__label">Nombre</span>
-            <input value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} required />
+            <input
+              {...inputProps('firstName')}
+              value={form.firstName}
+              onChange={(event) => updateField('firstName', event.target.value)}
+              required
+            />
+            <FieldError fieldId={fieldId('firstName')} message={fieldErrors.firstName} />
           </label>
           <label className="field">
             <span className="field__label">Apellido</span>
-            <input value={form.lastName} onChange={(event) => updateField('lastName', event.target.value)} required />
+            <input
+              {...inputProps('lastName')}
+              value={form.lastName}
+              onChange={(event) => updateField('lastName', event.target.value)}
+              required
+            />
+            <FieldError fieldId={fieldId('lastName')} message={fieldErrors.lastName} />
           </label>
         </div>
         <div className="form-row">
           <label className="field">
             <span className="field__label">Correo electrónico</span>
             <input
+              {...inputProps('email')}
               type="email"
               value={form.email}
               onChange={(event) => updateField('email', event.target.value)}
               required
             />
+            <FieldError fieldId={fieldId('email')} message={fieldErrors.email} />
           </label>
           <label className="field">
             <span className="field__label">Contraseña</span>
             <input
+              {...inputProps('password')}
               type="password"
               value={form.password}
               onChange={(event) => updateField('password', event.target.value)}
               required
               minLength={6}
             />
+            <FieldError fieldId={fieldId('password')} message={fieldErrors.password} />
           </label>
         </div>
 
-        {error && <p className="form-error">{error}</p>}
+        <FormError>{errors.summary}</FormError>
 
         <div className="actions">
           <button type="submit" className="button button--primary" disabled={busy}>

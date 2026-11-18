@@ -1,6 +1,6 @@
-// Por defecto se usa una ruta relativa para aprovechar el proxy de Vite (evita CORS en desarrollo).
-// El backend actual no configura CORS, por eso apuntar directo a http://localhost:8080/api
-// requiere habilitarlo del lado del servidor.
+// Por defecto se usa una ruta relativa para aprovechar el proxy de Vite (y el de nginx en
+// producción). Si VITE_API_URL apunta directo al backend, el origen del front tiene que estar
+// en CORS_ALLOWED_ORIGINS del backend (CorsConfig).
 import { stripBearer } from '../auth/jwt'
 import { SESSION_STORAGE_KEY } from '../auth/storage'
 
@@ -20,13 +20,26 @@ function readSessionToken(): string | null {
   }
 }
 
+/** Mensaje por campo, tal como llega en `errors[]` del ProblemDetail (`field` → `message`). */
+export type ApiFieldErrors = Record<string, string>
+
+interface ApiErrorDetails {
+  /** Clave estable del error (`code` del ProblemDetail, p. ej. `data.integrity.conflict`). */
+  code?: string
+  fieldErrors?: ApiFieldErrors
+}
+
 export class ApiError extends Error {
   readonly status: number
+  readonly code?: string
+  readonly fieldErrors: ApiFieldErrors
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, details: ApiErrorDetails = {}) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.code = details.code
+    this.fieldErrors = details.fieldErrors ?? {}
   }
 }
 
@@ -37,6 +50,64 @@ const FALLBACK_MESSAGES: Record<number, string> = {
   404: 'El recurso solicitado no existe.',
   409: 'La operación entra en conflicto con los datos actuales.',
   500: 'Ocurrió un error en el servidor. Intentá nuevamente más tarde.',
+}
+
+/**
+ * Códigos del backend que describen una falla técnica (ruta inexistente, cuerpo ilegible,
+ * error interno). Para el usuario sirve más el texto por código de estado que el `detail`.
+ */
+const TECHNICAL_CODES = new Set([
+  'internal.error',
+  'http.not-found',
+  'http.method-not-allowed',
+  'http.unsupported-media-type',
+  'http.not-acceptable',
+  'request.malformed',
+])
+
+interface ParsedErrorBody {
+  message?: string
+  code?: string
+  fieldErrors: ApiFieldErrors
+}
+
+/**
+ * Lee el cuerpo de error del backend. Con el formato estándar (ProblemDetail, #25) el texto
+ * viene en `detail`, la clave en `code` y los errores de validación en `errors[]`. Los
+ * errores anteriores traen `{ "mensaje": "..." }`, así que se aceptan los dos.
+ */
+function parseErrorBody(data: unknown): ParsedErrorBody {
+  const parsed: ParsedErrorBody = { fieldErrors: {} }
+  if (!data || typeof data !== 'object') {
+    return parsed
+  }
+
+  const record = data as Record<string, unknown>
+  for (const key of ['detail', 'mensaje', 'message']) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim()) {
+      parsed.message = value
+      break
+    }
+  }
+
+  if (typeof record.code === 'string') {
+    parsed.code = record.code
+  }
+
+  if (Array.isArray(record.errors)) {
+    for (const item of record.errors) {
+      if (!item || typeof item !== 'object') {
+        continue
+      }
+      const { field, message } = item as Record<string, unknown>
+      if (typeof field === 'string' && typeof message === 'string' && !(field in parsed.fieldErrors)) {
+        parsed.fieldErrors[field] = message
+      }
+    }
+  }
+
+  return parsed
 }
 
 type TokenGetter = () => string | null
@@ -90,25 +161,22 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     throw new ApiError(0, 'No se pudo conectar con el servidor. Verificá que el backend esté disponible.')
   }
 
-  if (response.status === 401 && !skipUnauthorized) {
+  // Solo un pedido que llevaba token puede significar "la sesión venció".
+  if (response.status === 401 && !skipUnauthorized && token) {
     onUnauthorized?.()
   }
 
   if (!response.ok) {
-    let message = FALLBACK_MESSAGES[response.status] ?? `Error inesperado (${response.status}).`
+    const fallback = FALLBACK_MESSAGES[response.status] ?? `Error inesperado (${response.status}).`
+    let parsed: ParsedErrorBody = { fieldErrors: {} }
     try {
-      const data: unknown = await response.json()
-      if (data && typeof data === 'object') {
-        const record = data as Record<string, unknown>
-        const backendMessage = record.mensaje ?? record.message
-        if (typeof backendMessage === 'string' && backendMessage.trim()) {
-          message = backendMessage
-        }
-      }
+      parsed = parseErrorBody(await response.json())
     } catch {
       // El backend no devolvió JSON: se mantiene el mensaje por código de estado.
     }
-    throw new ApiError(response.status, message)
+    const isTechnical = parsed.code !== undefined && TECHNICAL_CODES.has(parsed.code)
+    const message = parsed.message && response.status < 500 && !isTechnical ? parsed.message : fallback
+    throw new ApiError(response.status, message, { code: parsed.code, fieldErrors: parsed.fieldErrors })
   }
 
   if (response.status === 204) {

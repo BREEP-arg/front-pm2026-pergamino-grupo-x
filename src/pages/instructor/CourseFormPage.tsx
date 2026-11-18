@@ -3,11 +3,13 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { createCourse, getCourse, updateCourse } from '../../api/courses'
 import { getSpecialties } from '../../api/specialties'
 import { useAuth } from '../../auth/useAuth'
+import { FieldError, FormError } from '../../components/FieldError'
 import { useToast } from '../../components/useToast'
 import { CourseStatusBadge } from '../../components/StatusBadge'
 import { ErrorState, LoadingState } from '../../components/States'
 import type { CoursePayload, Specialty } from '../../types/domain'
 import { useApiResource } from '../../utils/useApiResource'
+import { useFormErrors, type FieldErrors } from '../../utils/useFormErrors'
 
 interface FormState {
   title: string
@@ -29,28 +31,44 @@ const EMPTY_FORM: FormState = {
   specialtyId: '',
 }
 
-function validate(form: FormState): string | null {
+type Field = keyof FormState
+
+// Mismo orden que en pantalla y mismos nombres que CourseRequest del backend.
+const FIELDS: readonly Field[] = [
+  'title',
+  'description',
+  'startDate',
+  'endDate',
+  'maxCapacity',
+  'basePrice',
+  'specialtyId',
+]
+
+function validate(form: FormState): FieldErrors<Field> {
+  const errors: FieldErrors<Field> = {}
   if (!form.title.trim()) {
-    return 'El título es obligatorio.'
+    errors.title = 'Ingresá el título del curso.'
   }
-  if (!form.startDate || !form.endDate) {
-    return 'Completá las fechas de inicio y fin.'
+  if (!form.startDate) {
+    errors.startDate = 'Elegí la fecha de inicio.'
   }
-  if (form.endDate <= form.startDate) {
-    return 'La fecha de fin debe ser posterior a la de inicio.'
+  if (!form.endDate) {
+    errors.endDate = 'Elegí la fecha de fin.'
+  } else if (form.startDate && form.endDate <= form.startDate) {
+    errors.endDate = 'Tiene que ser posterior a la fecha de inicio.'
   }
   const capacity = Number(form.maxCapacity)
-  if (!Number.isInteger(capacity) || capacity <= 0) {
-    return 'El cupo debe ser un número entero mayor a cero.'
+  if (!form.maxCapacity || !Number.isInteger(capacity) || capacity <= 0) {
+    errors.maxCapacity = 'El cupo debe ser un número entero mayor a cero.'
   }
   const price = Number(form.basePrice)
-  if (!Number.isFinite(price) || price <= 0) {
-    return 'El precio base debe ser mayor a cero.'
+  if (!form.basePrice || !Number.isFinite(price) || price <= 0) {
+    errors.basePrice = 'El precio base debe ser mayor a cero.'
   }
   if (!form.specialtyId) {
-    return 'Seleccioná una especialidad.'
+    errors.specialtyId = 'Seleccioná una especialidad.'
   }
-  return null
+  return errors
 }
 
 interface CourseFormProps {
@@ -66,19 +84,18 @@ function CourseForm({ specialties, initial }: CourseFormProps) {
   const navigate = useNavigate()
   const { showToast } = useToast()
   const [form, setForm] = useState<FormState>(initial?.form ?? EMPTY_FORM)
-  const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const errors = useFormErrors('course', FIELDS)
+  const { fieldErrors, fieldId, inputProps } = errors
 
-  const updateField = (field: keyof FormState, value: string) => {
+  const updateField = (field: Field, value: string) => {
     setForm((current) => ({ ...current, [field]: value }))
-    setError(null)
+    errors.clearField(field)
   }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const validationError = validate(form)
-    if (validationError) {
-      setError(validationError)
+    if (errors.showValidation(validate(form))) {
       return
     }
     if (!user) {
@@ -97,7 +114,7 @@ function CourseForm({ specialties, initial }: CourseFormProps) {
     }
 
     setBusy(true)
-    setError(null)
+    errors.reset()
     try {
       if (initial) {
         await updateCourse(initial.id, payload)
@@ -108,46 +125,58 @@ function CourseForm({ specialties, initial }: CourseFormProps) {
       }
       navigate('/instructor/courses')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'No se pudo guardar el curso.')
+      errors.showApiError(cause, 'No se pudo guardar el curso.')
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <form className="panel form form--narrow" onSubmit={handleSubmit}>
+    <form className="panel form form--narrow" onSubmit={handleSubmit} noValidate>
       <label className="field">
         <span className="field__label">Título</span>
-        <input value={form.title} onChange={(event) => updateField('title', event.target.value)} required />
+        <input
+          {...inputProps('title')}
+          value={form.title}
+          onChange={(event) => updateField('title', event.target.value)}
+          required
+        />
+        <FieldError fieldId={fieldId('title')} message={fieldErrors.title} />
       </label>
 
       <label className="field">
         <span className="field__label">Descripción</span>
         <textarea
+          {...inputProps('description')}
           rows={4}
           value={form.description}
           onChange={(event) => updateField('description', event.target.value)}
         />
+        <FieldError fieldId={fieldId('description')} message={fieldErrors.description} />
       </label>
 
       <div className="form-row">
         <label className="field">
           <span className="field__label">Fecha de inicio</span>
           <input
+            {...inputProps('startDate')}
             type="date"
             value={form.startDate}
             onChange={(event) => updateField('startDate', event.target.value)}
             required
           />
+          <FieldError fieldId={fieldId('startDate')} message={fieldErrors.startDate} />
         </label>
         <label className="field">
           <span className="field__label">Fecha de fin</span>
           <input
+            {...inputProps('endDate')}
             type="date"
             value={form.endDate}
             onChange={(event) => updateField('endDate', event.target.value)}
             required
           />
+          <FieldError fieldId={fieldId('endDate')} message={fieldErrors.endDate} />
         </label>
       </div>
 
@@ -155,16 +184,19 @@ function CourseForm({ specialties, initial }: CourseFormProps) {
         <label className="field">
           <span className="field__label">Cupo máximo</span>
           <input
+            {...inputProps('maxCapacity')}
             type="number"
             min={1}
             value={form.maxCapacity}
             onChange={(event) => updateField('maxCapacity', event.target.value)}
             required
           />
+          <FieldError fieldId={fieldId('maxCapacity')} message={fieldErrors.maxCapacity} />
         </label>
         <label className="field">
           <span className="field__label">Precio base (ARS)</span>
           <input
+            {...inputProps('basePrice')}
             type="number"
             min={1}
             step="0.01"
@@ -172,12 +204,14 @@ function CourseForm({ specialties, initial }: CourseFormProps) {
             onChange={(event) => updateField('basePrice', event.target.value)}
             required
           />
+          <FieldError fieldId={fieldId('basePrice')} message={fieldErrors.basePrice} />
         </label>
       </div>
 
       <label className="field">
         <span className="field__label">Especialidad</span>
         <select
+          {...inputProps('specialtyId')}
           value={form.specialtyId}
           onChange={(event) => updateField('specialtyId', event.target.value)}
           required
@@ -189,13 +223,14 @@ function CourseForm({ specialties, initial }: CourseFormProps) {
             </option>
           ))}
         </select>
+        <FieldError fieldId={fieldId('specialtyId')} message={fieldErrors.specialtyId} />
       </label>
       <p className="hint">
         El backend valida que la especialidad esté asignada al instructor; si no lo está, mostrará el
         error al guardar.
       </p>
 
-      {error && <p className="form-error">{error}</p>}
+      <FormError>{errors.summary}</FormError>
 
       <div className="actions">
         <Link className="button button--ghost" to="/instructor/courses">

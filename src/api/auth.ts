@@ -6,17 +6,68 @@ interface TokenResponse {
   token: string
 }
 
+/** Respuesta de POST /api/auth/token (#27). */
+interface UnifiedTokenResponse {
+  accessToken?: string
+  tokenType?: string
+  expiresIn?: number
+  role?: string
+}
+
 export interface LoginResponse {
   token: string
   user: SessionUser
 }
 
+const INVALID_CREDENTIALS = 'Email o contraseña incorrectos.'
+
 /**
- * Los logins viven fuera de /api y son uno por tipo de usuario. Como la respuesta
+ * Logins viejos: viven fuera de /api y son uno por tipo de usuario. Como la respuesta
  * solo trae el token (el rol viaja en el JWT), se prueban en orden hasta que uno
- * acepte las credenciales: así el usuario no tiene que elegir su tipo.
+ * acepte las credenciales. Se usan solo si el backend todavía no tiene /api/auth/token.
  */
 const AUTH_ENDPOINTS = ['/student/auth', '/instructor/auth', '/administrator/auth'] as const
+
+/**
+ * Queda en true cuando el backend respondió que POST /api/auth/token no existe, para no
+ * volver a probarlo en cada login hasta que se recargue la página.
+ */
+let unifiedLoginUnavailable = false
+
+/**
+ * Login único (#27): un solo pedido para los tres roles. Devuelve null si el backend
+ * todavía no tiene el endpoint (404/405), y entonces se usan los logins viejos.
+ */
+async function requestUnifiedToken(
+  email: string,
+  password: string,
+): Promise<{ token: string; role?: string } | null> {
+  if (unifiedLoginUnavailable) {
+    return null
+  }
+
+  try {
+    const response = await apiFetch<UnifiedTokenResponse>('/auth/token', {
+      method: 'POST',
+      body: { email, password },
+      authToken: null,
+      skipUnauthorized: true,
+    })
+    if (typeof response.accessToken !== 'string' || !response.accessToken.trim()) {
+      throw new ApiError(500, 'El servidor no devolvió un token de sesión.')
+    }
+    return { token: stripBearer(response.accessToken), role: response.role }
+  } catch (cause) {
+    if (cause instanceof ApiError && (cause.status === 404 || cause.status === 405)) {
+      unifiedLoginUnavailable = true
+      return null
+    }
+    if (cause instanceof ApiError && cause.status === 401) {
+      throw new ApiError(401, INVALID_CREDENTIALS, { code: cause.code })
+    }
+    throw cause
+  }
+}
 
 async function requestToken(path: string, email: string, password: string): Promise<string> {
   const { token } = await apiFetch<TokenResponse>(path, {
@@ -47,7 +98,7 @@ async function findToken(email: string, password: string): Promise<string> {
     }
   }
 
-  throw new ApiError(401, 'Email o contraseña incorrectos.')
+  throw new ApiError(401, INVALID_CREDENTIALS)
 }
 
 function emptyProfile(user: Omit<SessionUser, 'firstName' | 'lastName'>): SessionUser {
@@ -91,8 +142,8 @@ async function loadProfile(
 /**
  * Inicia sesión con email y contraseña.
  *
- * Prueba los tres endpoints de autenticación hasta encontrar el que corresponde
- * al usuario, decodifica el JWT para obtener el rol y completa el perfil.
+ * Usa POST /api/auth/token y, si el backend todavía no lo tiene, prueba los tres logins
+ * viejos. Después decodifica el JWT para obtener el rol y completa el perfil.
  */
 export async function login(email: string, password: string): Promise<LoginResponse> {
   const trimmedEmail = email.trim()
@@ -100,7 +151,8 @@ export async function login(email: string, password: string): Promise<LoginRespo
     throw new ApiError(400, 'Ingresá tu email y contraseña.')
   }
 
-  const token = await findToken(trimmedEmail, password)
+  const unified = await requestUnifiedToken(trimmedEmail, password)
+  const token = unified?.token ?? (await findToken(trimmedEmail, password))
   const payload = decodeJwtPayload(token)
 
   if (!payload) {
@@ -111,7 +163,7 @@ export async function login(email: string, password: string): Promise<LoginRespo
     throw new ApiError(401, 'Tu sesión expiró. Volvé a iniciar sesión.')
   }
 
-  const role = roleFromBackend(payload.rol)
+  const role = roleFromBackend(payload.rol) ?? roleFromBackend(unified?.role)
   const id = typeof payload.userId === 'number' ? payload.userId : Number(payload.userId)
 
   if (!role || !Number.isInteger(id)) {
