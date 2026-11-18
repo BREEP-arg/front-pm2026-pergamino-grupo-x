@@ -1241,10 +1241,6 @@ th.cell-number {
   border-color: var(--primary-border);
 }
 
-.auth-card .alert {
-  margin-bottom: 0;
-}
-
 /* ---------- Modal ---------- */
 .modal-backdrop {
   position: fixed;
