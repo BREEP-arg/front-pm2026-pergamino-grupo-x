@@ -544,44 +544,30 @@ textarea {
   margin: 0;
 }
 
-/* Error de un campo: el input se marca y el mensaje va justo debajo. */
+/*
+ * Error de un campo. Usa el mismo recurso que el resto de los estados del input
+ * (hover y foco cambian solo el borde): el borde pasa a rojo y el mensaje va debajo,
+ * con el mismo tamaño y peso que .form-error. Sin relleno ni ícono: el texto ya
+ * explica el error y el rojo no es la única señal.
+ */
 input[aria-invalid='true'],
 select[aria-invalid='true'],
 textarea[aria-invalid='true'] {
   border-color: var(--danger);
-  background: var(--danger-soft);
 }
 
+/* Con foco manda el estilo de foco de toda la app: el teclado siempre ve dónde está. */
 input[aria-invalid='true']:focus,
 select[aria-invalid='true']:focus,
 textarea[aria-invalid='true']:focus {
-  border-color: var(--danger);
-  box-shadow: 0 0 0 3px rgb(192 43 43 / 18%);
+  border-color: var(--primary);
 }
 
 .field__error {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.4rem;
   color: var(--danger);
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 500;
-  line-height: 1.35;
-}
-
-.field__error::before {
-  content: '!';
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 15px;
-  height: 15px;
-  margin-top: 1px;
-  border-radius: 50%;
-  background: var(--danger);
-  color: var(--white);
-  font-size: 0.65rem;
-  font-weight: 800;
+  line-height: 1.4;
 }
 
 .checkbox-grid {
@@ -1233,12 +1219,6 @@ th.cell-number {
   background: var(--warning-bg);
   color: var(--warning-text);
   border-color: #f0dca8;
-}
-
-.alert--info {
-  background: var(--primary-soft);
-  color: var(--primary-dark);
-  border-color: var(--primary-border);
 }
 
 /* ---------- Modal ---------- */

@@ -50,9 +50,9 @@ export function LoginPage() {
         <p className="muted">Plataforma de gestión de cursos</p>
 
         {sessionExpired && !error && (
-          <div className="alert alert--info" role="status">
+          <p className="hint" role="status">
             Tu sesión venció. Ingresá de nuevo para continuar.
-          </div>
+          </p>
         )}
 
         <form className="form" onSubmit={handleSubmit} noValidate>
