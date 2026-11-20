@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../api/client'
 import { enviarVoz } from '../api/asistente'
 import { useToast } from '../components/useToast'
-import type { RespuestaVoz, TurnoHistorial } from '../types/asistente'
+import type { RespuestaVoz, SecretoAsistente, TurnoHistorial } from '../types/asistente'
 import { useAudioRecorder } from './useAudioRecorder'
 
 export type EstadoAsistente = 'listo' | 'escuchando' | 'pensando'
@@ -22,7 +22,10 @@ export function useAsistente({ alCambiar }: Params) {
   const { showToast } = useToast()
   const grabador = useAudioRecorder()
   const [pensando, setPensando] = useState(false)
+  // `respuesta` se guarda sin secreto: la contraseña vive aparte para poder borrarla al cerrar
+  // el panel o al empezar otro pedido sin tocar `respuesta` (y sin reiniciar el timer de deshacer).
   const [respuesta, setRespuesta] = useState<RespuestaVoz | null>(null)
+  const [secreto, setSecreto] = useState<SecretoAsistente | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [panelAbierto, setPanelAbierto] = useState(false)
   const [deshacerVencido, setDeshacerVencido] = useState<RespuestaVoz | null>(null)
@@ -61,11 +64,13 @@ export function useAsistente({ alCambiar }: Params) {
       ocupadoRef.current = true
       setPensando(true)
       setError(null)
+      setSecreto(null)
       setPanelAbierto(true)
       try {
         const r = await pedido()
         registrar(r)
-        setRespuesta(r)
+        setSecreto(r.secreto)
+        setRespuesta({ ...r, secreto: null })
         if (esConfirmacion || r.acciones.some((a) => a.ok && a.tipo !== 'lectura')) {
           alCambiarRef.current()
         }
@@ -92,8 +97,11 @@ export function useAsistente({ alCambiar }: Params) {
     if (!audio || audio.size === 0) {
       return
     }
-    await procesar(() => enviarVoz({ audio, historial: historialRef.current }))
-  }, [grabador, procesar])
+    // Si hay un borrado esperando confirmación, va con el audio: un "sí" por voz lo confirma
+    // y cualquier otra cosa lo descarta en el servicio.
+    const pendienteId = respuesta?.pendiente?.id
+    await procesar(() => enviarVoz({ audio, historial: historialRef.current, pendienteId }))
+  }, [grabador, procesar, respuesta])
 
   const confirmar = useCallback(
     async (confirmado: boolean) => {
@@ -131,14 +139,24 @@ export function useAsistente({ alCambiar }: Params) {
     }
   }, [deshaciendo, respuesta, showToast])
 
+  const respuestaVisible = useMemo(
+    () => (respuesta ? { ...respuesta, secreto } : null),
+    [respuesta, secreto],
+  )
+
+  const cerrarPanel = useCallback(() => {
+    setPanelAbierto(false)
+    setSecreto(null)
+  }, [])
+
   const estado: EstadoAsistente = pensando ? 'pensando' : grabador.estado === 'grabando' ? 'escuchando' : 'listo'
 
   return {
     estado,
-    respuesta,
+    respuesta: respuestaVisible,
     error: error ?? grabador.error,
     panelAbierto,
-    cerrarPanel: () => setPanelAbierto(false),
+    cerrarPanel,
     deshacerVisible,
     deshaciendo,
     empezar,
