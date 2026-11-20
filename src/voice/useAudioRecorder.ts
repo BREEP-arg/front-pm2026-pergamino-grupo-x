@@ -40,6 +40,10 @@ export function useAudioRecorder() {
   // Se resuelve cuando el grabador termina de armar el audio (por terminar() o por el corte).
   const resultadoRef = useRef<Promise<Blob | null> | null>(null)
   const resolverRef = useRef<((blob: Blob | null) => void) | null>(null)
+  // Guarda síncrona contra dobles llamadas a empezar() mientras getUserMedia está pendiente.
+  const iniciandoRef = useRef(false)
+  // Cambia cada vez que se descarta o se termina: invalida un getUserMedia en vuelo.
+  const generacionRef = useRef(0)
 
   const liberar = useCallback(() => {
     if (timeoutRef.current) {
@@ -52,6 +56,7 @@ export function useAudioRecorder() {
 
   /** Suelta todo sin entregar audio. Se desenganchan los handlers antes de parar los tracks. */
   const descartar = useCallback(() => {
+    generacionRef.current += 1
     const recorder = recorderRef.current
     if (recorder) {
       recorder.onstop = null
@@ -76,7 +81,7 @@ export function useAudioRecorder() {
   useEffect(() => descartar, [descartar])
 
   const empezar = useCallback(async () => {
-    if (recorderRef.current) {
+    if (recorderRef.current || iniciandoRef.current) {
       return
     }
     setError(null)
@@ -87,10 +92,17 @@ export function useAudioRecorder() {
       return
     }
 
+    const generacion = generacionRef.current
+    iniciandoRef.current = true
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       })
+      // Se desmontó o se pidió terminar mientras se esperaba el permiso: se suelta el micrófono.
+      if (generacion !== generacionRef.current) {
+        stream.getTracks().forEach((track) => track.stop())
+        return
+      }
       streamRef.current = stream
 
       const mime = elegirMime()
@@ -128,7 +140,8 @@ export function useAudioRecorder() {
       setEstado('grabando')
 
       timeoutRef.current = setTimeout(() => {
-        if (recorder.state === 'recording') {
+        // Solo corta a su propio grabador, nunca a uno posterior.
+        if (recorderRef.current === recorder && recorder.state === 'recording') {
           recorder.stop()
         }
       }, DURACION_MAXIMA_MS)
@@ -136,12 +149,18 @@ export function useAudioRecorder() {
       descartar()
       setError(mensajeDeError(err))
       setEstado('error')
+    } finally {
+      iniciandoRef.current = false
     }
   }, [descartar, liberar])
 
   const terminar = useCallback(async (): Promise<Blob | null> => {
     const resultado = resultadoRef.current
     if (!resultado) {
+      // Si todavía se espera el permiso del micrófono, se cancela ese inicio.
+      if (iniciandoRef.current) {
+        generacionRef.current += 1
+      }
       return null
     }
     const recorder = recorderRef.current
