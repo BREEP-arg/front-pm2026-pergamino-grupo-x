@@ -544,6 +544,32 @@ textarea {
   margin: 0;
 }
 
+/*
+ * Error de un campo. Usa el mismo recurso que el resto de los estados del input
+ * (hover y foco cambian solo el borde): el borde pasa a rojo y el mensaje va debajo,
+ * con el mismo tamaño y peso que .form-error. Sin relleno ni ícono: el texto ya
+ * explica el error y el rojo no es la única señal.
+ */
+input[aria-invalid='true'],
+select[aria-invalid='true'],
+textarea[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+/* Con foco manda el estilo de foco de toda la app: el teclado siempre ve dónde está. */
+input[aria-invalid='true']:focus,
+select[aria-invalid='true']:focus,
+textarea[aria-invalid='true']:focus {
+  border-color: var(--primary);
+}
+
+.field__error {
+  color: var(--danger);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
 .checkbox-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));

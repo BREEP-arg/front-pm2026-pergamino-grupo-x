@@ -1,17 +1,25 @@
 # API Contract — Frontend E-Learning
 
-Contrato **real** extraído del backend Spring ubicado en `../pm2026-pergamino-grupo-x/demo`
-(paquetes `course`, `user`, `enrollment`, `approval`, `auth`).
+Contrato **real** extraído del backend Spring ubicado en `../pm2026-pergamino-grupo-x/backend`
+(paquete base `ar.edu.unnoba.pm2026`: `course`, `user`, `enrollment`, `approval`, `auth`).
 
 - Base URL: `http://localhost:8080/api` (el front usa `/api` + proxy de Vite en desarrollo).
 - Formato: JSON. Fechas `yyyy-MM-dd` (`LocalDate`) o ISO-8601 sin zona (`LocalDateTime`).
 - Montos: `BigDecimal` serializado como número (`45000.00`).
-- Errores: `{ "mensaje": "..." }` con códigos 400, 404, 409 y 500.
-- Autenticación: **JWT** con logins separados por tipo de usuario. Ver sección "Autenticación".
+- Errores: `ProblemDetail` (issue #25 del backend) o, en el formato anterior,
+  `{ "mensaje": "..." }`. Ver sección "Códigos de error".
+- Autenticación: **JWT**. Login único `POST /api/auth/token` (issue #27) y logins viejos por
+  tipo de usuario. Ver sección "Autenticación".
 
 ## Autenticación
 
-Hay un login por tipo de usuario, fuera del prefijo `/api`:
+Login único (issue #27 del backend), dentro de `/api`:
+
+| Método | Endpoint | Body | Respuesta |
+| --- | --- | --- | --- |
+| POST | `/api/auth/token` | `{ email, password }` | `{ "accessToken": "<jwt>", "tokenType": "Bearer", "expiresIn": 864000, "role": "STUDENT \| INSTRUCTOR \| ADMINISTRATOR" }` |
+
+Logins viejos, uno por tipo de usuario, fuera del prefijo `/api` (deprecados con el #27):
 
 | Método | Endpoint | Body | Respuesta |
 | --- | --- | --- | --- |
@@ -19,8 +27,8 @@ Hay un login por tipo de usuario, fuera del prefijo `/api`:
 | POST | `/instructor/auth` | `{ email, password }` | `{ "token": "Bearer <jwt>" }` |
 | POST | `/administrator/auth` | `{ email, password }` | `{ "token": "Bearer <jwt>" }` |
 
-El token ya incluye el prefijo `Bearer `; el front lo guarda sin ese prefijo y lo envía en
-`Authorization: Bearer <jwt>`. Vence a los 10 días.
+El token de los logins viejos ya incluye el prefijo `Bearer `; el front lo guarda sin ese
+prefijo y lo envía en `Authorization: Bearer <jwt>`. Vence a los 10 días.
 
 El JWT incluye:
 
@@ -34,10 +42,14 @@ El JWT incluye:
 }
 ```
 
-**Login del front** (`src/api/auth.ts`): como no hay un endpoint unificado, se prueba
-`/student/auth`, `/instructor/auth` y `/administrator/auth` en ese orden hasta obtener un
-`200`. Si los tres devuelven `401`, las credenciales son inválidas. Luego se decodifica el
-JWT para obtener `rol`, `userId` y `sub`, y se completa el perfil:
+El claim `rol` se mantiene en español aunque `role` de `/api/auth/token` venga en inglés; el
+front acepta los dos.
+
+**Login del front** (`src/api/auth.ts`): primero `POST /api/auth/token`. Si responde `404`
+(backend sin el #27), prueba `/student/auth`, `/instructor/auth` y `/administrator/auth` en
+ese orden hasta obtener un `200`, y no vuelve a probar el login único hasta recargar la
+página. Un `401` significa credenciales inválidas. Luego se decodifica el JWT para obtener
+`rol`, `userId` y `sub`, y se completa el perfil:
 
 - Instructor: `GET /api/instructors/{id}` (público).
 - Administrador: `GET /api/administrators/{id}` con su token.
@@ -197,13 +209,32 @@ No hay cancelación ni endpoint de inscripciones por curso/alumno: el front filt
 | 409 | Email/DNI duplicado, curso lleno, no publicado, ya inscripto, etc. | `"El curso esta lleno"` |
 | 500 | Error no controlado | — |
 
-El front muestra `mensaje` del backend cuando existe y, si no, un texto por código de estado.
+Formato estándar (`ProblemDetail`, issue #25 del backend):
+
+```json
+{
+  "type": "about:blank",
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "El campo 'email' debe tener un formato valido",
+  "instance": "/api/students",
+  "code": "request.validation",
+  "timestamp": "2026-11-17T21:40:12Z",
+  "errors": [{ "field": "email", "message": "El campo 'email' debe tener un formato valido" }]
+}
+```
+
+`errors` solo aparece en los errores de validación. El front muestra `detail` (o `mensaje`
+en el formato anterior) y, si no hay texto o el error es técnico (`5xx`, `internal.error`,
+`http.not-found`, `request.malformed`…), un texto propio por código de estado. Los
+`errors[]` se muestran debajo de cada campo del formulario. Un `409` en el registro se
+explica como "Ya hay una cuenta con ese email o ese DNI" con un link al login.
 
 ## Diferencias con el contrato del enunciado (sección 6)
 
 | Enunciado | Backend real | Resolución en el front |
 | --- | --- | --- |
-| `POST /auth/login` | No existe: hay un login por tipo (`/student/auth`, `/instructor/auth`, `/administrator/auth`) | El front prueba los tres y deduce el rol del JWT |
+| `POST /auth/login` | `POST /api/auth/token` (#27); antes, un login por tipo (`/student/auth`, `/instructor/auth`, `/administrator/auth`) | El front usa el único y, si no existe, prueba los tres; deduce el rol del JWT |
 | `GET /courses?status=&specialty=` | Solo `studentId` | Filtros locales |
 | `GET /instructors/me/courses` | No existe | `GET /courses` filtrado por `instructorId` |
 | `POST /courses/{id}/approval-requests` | `POST /approval-requests` con `courseId` | Se usa el real |
@@ -217,4 +248,4 @@ El front muestra `mensaje` del backend cuando existe y, si no, un texto por cód
 | `PATCH /instructors/{id}/approve` | No existe (alta directa) | No se muestra flujo de aprobación |
 | `specialties` como enum | Entidad con id/nombre | Se cargan desde `/specialties` |
 | Instructor con `specialties[]` en el response | No se devuelven | Selector muestra todas; el backend valida |
-| CORS | No configurado | Proxy `/api` de Vite en desarrollo |
+| CORS | Configurado con `CORS_ALLOWED_ORIGINS` (`CorsConfig`) | Proxy `/api` de Vite en desarrollo y de nginx en producción |

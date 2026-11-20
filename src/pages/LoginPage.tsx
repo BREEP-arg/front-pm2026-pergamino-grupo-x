@@ -1,7 +1,9 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { HOME_BY_ROLE } from '../auth/homeByRole'
+import { clearSessionExpired, wasSessionExpired } from '../auth/storage'
+import { FormError } from '../components/FieldError'
 
 interface LocationState {
   from?: string
@@ -15,6 +17,12 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Si la sesión anterior venció, se explica una vez y se borra la marca.
+  const [sessionExpired] = useState(wasSessionExpired)
+
+  useEffect(() => {
+    clearSessionExpired()
+  }, [])
 
   if (user) {
     return <Navigate to={HOME_BY_ROLE[user.role]} replace />
@@ -41,7 +49,13 @@ export function LoginPage() {
         <h1>Iniciar sesión</h1>
         <p className="muted">Plataforma de gestión de cursos</p>
 
-        <form className="form" onSubmit={handleSubmit}>
+        {sessionExpired && !error && (
+          <p className="hint" role="status">
+            Tu sesión venció. Ingresá de nuevo para continuar.
+          </p>
+        )}
+
+        <form className="form" onSubmit={handleSubmit} noValidate>
           <label className="field">
             <span className="field__label">Correo electrónico</span>
             <input
@@ -62,11 +76,10 @@ export function LoginPage() {
               onChange={(event) => setPassword(event.target.value)}
               required
               autoComplete="current-password"
-              placeholder="••••••••"
             />
           </label>
 
-          {error && <p className="form-error">{error}</p>}
+          <FormError>{error}</FormError>
 
           <button type="submit" className="button button--primary button--full" disabled={busy}>
             {busy ? 'Ingresando…' : 'Ingresar'}

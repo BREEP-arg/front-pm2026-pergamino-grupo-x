@@ -3,7 +3,7 @@ import { login as loginRequest } from '../api/auth'
 import { configureApi } from '../api/client'
 import type { AuthSession } from '../types/domain'
 import { AuthContext, type AuthContextValue } from './context'
-import { clearStoredSession, persistSession, readStoredSession } from './storage'
+import { clearStoredSession, markSessionExpired, persistSession, readStoredSession } from './storage'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(readStoredSession)
@@ -23,6 +23,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     configureApi(
       () => sessionRef.current?.token ?? null,
       () => {
+        // Un 401 con token: la sesión venció o el token dejó de valer.
+        markSessionExpired()
         clearStoredSession()
         sessionRef.current = null
         setSession(null)

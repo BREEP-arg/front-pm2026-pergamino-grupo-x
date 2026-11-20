@@ -2,13 +2,15 @@
 
 Aplicación React + TypeScript para una plataforma e-learning con tres roles
 (estudiante, instructor y administrador). Consume la API REST del backend Spring del
-repositorio `pm2026-pergamino-grupo-x` (`demo/`).
+repositorio `pm2026-pergamino-grupo-x` (carpeta `backend/`).
 
 ## Requisitos
 
 - Node.js 20+ y npm.
 - Backend Spring corriendo en `http://localhost:8080` con PostgreSQL accesible.
-- El backend **no configura CORS**; por eso el front usa el proxy `/api` de Vite en desarrollo.
+- En desarrollo el front usa el proxy `/api` de Vite, así front y API comparten origen. El
+  backend también acepta pedidos directos de los orígenes que figuran en su variable
+  `CORS_ALLOWED_ORIGINS`.
 
 ## Instalación y ejecución
 
@@ -96,7 +98,7 @@ docker run -d --name elearning-front -p 8081:80 \
 | --- | --- | --- |
 | `API_UPSTREAM` | `http://host.docker.internal:8080` | Origen del backend para el proxy `/api`. Se resuelve en tiempo de request. |
 | `PORT` | `80` | Puerto donde escucha nginx. En Railway se toma del valor inyectado por la plataforma. |
-| `VITE_API_URL` | `/api` | Se puede sobreescribir en build con `--build-arg VITE_API_URL=...`; si se usa una URL absoluta, el backend debe habilitar CORS. |
+| `VITE_API_URL` | `/api` | Se puede sobreescribir en build con `--build-arg VITE_API_URL=...`; si se usa una URL absoluta, el origen del front tiene que estar en `CORS_ALLOWED_ORIGINS` del backend. |
 
 ## Despliegue en Railway
 
@@ -129,29 +131,31 @@ Copiá `.env.example` a `.env` si necesitás cambiar valores:
 | --- | --- | --- |
 | `VITE_API_URL` | `/api` | Base de la API. Ruta relativa para usar el proxy de Vite. |
 
-Los logins (`/student/auth`, `/instructor/auth` y `/administrator/auth`) viven fuera de
-`/api`; Vite y nginx los proxyean con rutas exactas. El front los prueba en orden hasta
-que uno acepte las credenciales, por lo que no hace falta configurar nada adicional.
+El login único (`/api/auth/token`) va por el proxy de `/api`. Los logins viejos
+(`/student/auth`, `/instructor/auth` y `/administrator/auth`) viven fuera de `/api`; Vite y
+nginx los proxyean con rutas exactas.
 
-Si apuntás `VITE_API_URL` directo a `http://localhost:8080/api`, el navegador bloqueará las
-requests por CORS hasta que el backend lo habilite. En producción hace falta CORS o un proxy
-inverso equivalente.
+Si apuntás `VITE_API_URL` directo a `http://localhost:8080/api`, agregá el origen del front
+(por ejemplo `http://localhost:5173`) a `CORS_ALLOWED_ORIGINS` en el `.env` del backend.
 
 ## Autenticación
 
-La autenticación es por JWT. El front no pregunta el tipo de usuario: al enviar email y
-contraseña prueba los tres logins del backend en orden:
+La autenticación es por JWT. El front no pregunta el tipo de usuario:
 
-1. `POST /student/auth`
-2. `POST /instructor/auth`
-3. `POST /administrator/auth`
+1. Envía email y contraseña a `POST /api/auth/token` (login único, issue #27 del backend).
+   Responde `{ accessToken, tokenType, expiresIn, role }`.
+2. Si el backend responde `404` (todavía no tiene ese endpoint), usa los logins viejos en
+   orden: `POST /student/auth`, `POST /instructor/auth` y `POST /administrator/auth`. El
+   primero que responde `200` devuelve `{ "token": "Bearer <jwt>" }`. El `404` se recuerda
+   hasta recargar la página, para no repetir ese pedido en cada login.
 
-El primero que responde `200` devuelve `{ "token": "Bearer <jwt>" }` (el token ya incluye
-el prefijo). Si los tres devuelven `401`, las credenciales son inválidas.
+En los dos casos un `401` significa credenciales inválidas, y el mensaje no dice si falló el
+email o la contraseña.
 
-El JWT contiene `sub` (email), `rol` (`ALUMNO | INSTRUCTOR | ADMINISTRADOR`) y `userId`.
-Con esos claims el front arma la sesión (`STUDENT | INSTRUCTOR | ADMIN`) y completa
-nombre y apellido:
+El JWT contiene `sub` (email), `rol` y `userId`. El front acepta el rol en español
+(`ALUMNO | INSTRUCTOR | ADMINISTRADOR`, como lo manda hoy el claim) y en inglés
+(`STUDENT | INSTRUCTOR | ADMINISTRATOR`, como viene `role` en `/api/auth/token`). Con esos
+datos arma la sesión (`STUDENT | INSTRUCTOR | ADMIN`) y completa nombre y apellido:
 
 | Rol | Origen del nombre |
 | --- | --- |
@@ -161,18 +165,39 @@ nombre y apellido:
 
 El token se guarda **sin** el prefijo `Bearer` en `localStorage` (clave
 `elearning.session.v2`) y se adjunta como `Authorization: Bearer <jwt>` en cada request.
-Si el backend responde `401`, la sesión se limpia y se redirige al login.
+Si un pedido con token recibe `401`, o el token guardado ya venció al abrir la app, la sesión
+se limpia y el login muestra "Tu sesión venció. Ingresá de nuevo para continuar." Al
+ingresar se vuelve a la página donde estaba el usuario.
 
 El registro público de estudiantes (`POST /students`) crea la cuenta real y luego inicia
 sesión automáticamente.
+
+## Errores de la API
+
+`src/api/client.ts` convierte cada respuesta de error en un `ApiError` con:
+
+- `status`: el código HTTP.
+- `message`: el `detail` del formato estándar (`ProblemDetail`, issue #25 del backend) o, con
+  el backend anterior, el `mensaje`. Para errores `5xx` y fallas técnicas (`internal.error`,
+  `http.not-found`, `request.malformed`, etc.) usa un texto propio por código de estado.
+- `code`: la clave estable del error (`data.integrity.conflict`, `authentication.failed`…).
+- `fieldErrors`: los mensajes de `errors[]` por campo, en los errores de validación (`400`).
+
+Los formularios (registro, alta de instructor, alta de administrador y curso) validan todos
+los campos antes de enviar y muestran cada error debajo de su campo, con `aria-invalid` y
+`aria-describedby`. Si el backend responde `errors[]`, marca esos mismos campos: los nombres
+del formulario coinciden con los del `Request` del backend. Cuando hay más de un campo con
+error, arriba del botón aparece "Revisá los N campos marcados." El hook
+`src/utils/useFormErrors.ts` y el componente `src/components/FieldError.tsx` concentran este
+comportamiento.
 
 ## Estructura
 
 ```
 src/
 ├── api/            # cliente fetch + una función por recurso
-│   ├── client.ts   # wrapper, token, errores y mapeo de status
-│   ├── auth.ts     # login: prueba los 3 endpoints y decodifica el JWT
+│   ├── client.ts   # wrapper, token, ApiError (detail, code, errores por campo)
+│   ├── auth.ts     # login único con respaldo a los logins viejos; decodifica el JWT
 │   ├── courses.ts
 │   ├── enrollments.ts
 │   ├── approvals.ts
@@ -181,13 +206,13 @@ src/
 │   ├── administrators.ts
 │   └── specialties.ts
 ├── auth/           # AuthContext, ProtectedRoute, home por rol
-├── components/     # Layout/navbar, modales, toasts, badges, estados
+├── components/     # Layout/navbar, modales, toasts, badges, estados, errores de campo
 ├── pages/
 │   ├── student/    # catálogo, detalle, mis cursos
 │   ├── instructor/ # cursos, formulario, solicitudes, inscriptos, recaudación
 │   └── admin/      # solicitudes, cursos, instructores, administradores, recaudación
 ├── types/          # tipos del dominio
-└── utils/          # formatos es-AR, reglas de inscripción, hook de carga
+└── utils/          # formatos es-AR, reglas de inscripción, hooks de carga y de errores de formulario
 ```
 
 ## Funcionalidades por rol
@@ -221,7 +246,7 @@ src/
 ## Reglas y decisiones relevantes
 
 - El backend es la fuente de verdad: el front deshabilita acciones inválidas y muestra el
-  `mensaje` devuelto por el servidor.
+  mensaje devuelto por el servidor (`detail`, o `mensaje` en el formato anterior).
 - Las inscripciones no se cancelan (el backend no lo permite).
 - El descuento de fidelidad lo calcula el backend al confirmar; el front no lo estima. Si hay
   una inscripción previa del mismo mes y especialidad, muestra un aviso informativo.
@@ -234,11 +259,12 @@ src/
 
 Documentadas en detalle en [`API_CONTRACT.md`](./API_CONTRACT.md). Resumen:
 
-1. **Autenticación JWT**: el front prueba los tres logins (`/student/auth`,
-   `/instructor/auth`, `/administrator/auth`) y deduce el rol del token. El perfil del alumno
-   no está expuesto: `GET /api/students/{id}` es solo para administradores, por lo que la
-   barra muestra su email.
-2. **Sin CORS**: se resuelve con proxy de Vite en desarrollo; producción requiere CORS/proxy.
+1. **Autenticación JWT**: el front usa `POST /api/auth/token` y, mientras el backend no lo
+   tenga, prueba los tres logins viejos. Deduce el rol del token. El perfil del alumno no está
+   expuesto: `GET /api/students/{id}` es solo para administradores, por lo que la barra
+   muestra su email.
+2. **CORS**: el backend lo configura con `CORS_ALLOWED_ORIGINS`; igual el front usa el proxy
+   de Vite en desarrollo y el de nginx en producción.
 3. **Especialidades del instructor no expuestas**: el formulario de curso muestra todas las
    especialidades y el backend rechaza si no pertenece al instructor.
 4. **Instructores sin estado pendiente**: no existe `PATCH /instructors/{id}/approve`; el alta es
