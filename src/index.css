@@ -1468,3 +1468,57 @@ th.cell-number {
     scroll-behavior: auto !important;
   }
 }
+
+/* ---------- Asistente de voz ---------- */
+.voz-boton {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 1.25rem;
+  z-index: 55;
+  box-shadow: var(--shadow-md);
+  touch-action: none;
+  user-select: none;
+}
+
+.voz-boton--activo {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.voz-panel {
+  position: fixed;
+  bottom: 4.5rem;
+  left: 1.25rem;
+  z-index: 55;
+  width: min(420px, calc(100vw - 2.5rem));
+  max-height: 60vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-md);
+}
+
+.voz-panel__body > * + * {
+  margin-top: 0.75rem;
+}
+
+.voz-panel__dijiste {
+  font-size: 0.875rem;
+}
+
+.voz-panel__secreto,
+.voz-panel__acciones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-sm);
+}
+
+.voz-panel__secreto code {
+  font-size: 1rem;
+  padding: 0.15rem 0.4rem;
+  background: var(--white);
+  border-radius: var(--radius-sm);
+}
