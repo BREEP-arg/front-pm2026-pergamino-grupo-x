@@ -87,7 +87,7 @@ export function Layout() {
         <Outlet key={refrescos} />
       </main>
 
-      {user && <BotonVoz alCambiar={() => setRefrescos((n) => n + 1)} />}
+      <BotonVoz key={user?.id ?? 'anon'} alCambiar={() => setRefrescos((n) => n + 1)} />
     </div>
   )
 }
