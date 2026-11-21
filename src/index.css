@@ -2910,3 +2910,109 @@ html {
     display: none;
   }
 }
+
+/*
+ * ---------- Asistente por voz: ajustes al diseño editorial ----------
+ * Las reglas .voz-* de feat/asistente-voz quedan como están; esto solo las
+ * acomoda a la tinta, la tipografía y las esquinas del rediseño.
+ */
+.voz-boton {
+  color: var(--paper);
+  background: var(--ink);
+  box-shadow: 0 0 0 1px rgb(236 234 227 / 30%), 0 14px 34px rgb(0 0 0 / 55%);
+}
+
+.voz-boton:hover:not(:disabled) {
+  background: #ffffff;
+  transform: translateY(-2px);
+}
+
+.voz-boton:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.voz-boton:focus-visible {
+  box-shadow: 0 14px 34px rgb(0 0 0 / 55%), 0 0 0 3px var(--paper), 0 0 0 5px var(--ink);
+}
+
+/* Grabando: rojo lleno con el ícono claro, y el anillo del volumen en el mismo rojo. */
+.voz-dock--escuchando .voz-boton {
+  color: #ffffff;
+  background: var(--danger-fill);
+}
+
+.voz-boton__anillo {
+  background: var(--danger-fill);
+}
+
+.voz-dock--pensando .voz-boton {
+  background: var(--paper-sunk);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--rule-strong), 0 14px 34px rgb(0 0 0 / 55%);
+}
+
+.voz-boton__spinner {
+  border-color: var(--rule-strong);
+  border-top-color: var(--ink);
+}
+
+.voz-dock__etiqueta {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+  background: var(--paper-raised);
+  border-color: var(--rule-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+}
+
+.voz-dock__punto {
+  background: var(--danger-fill);
+}
+
+/* Lo que vas diciendo, en la serif grande: se lee como un título que se escribe solo. */
+.voz-vivo {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  line-height: 1.15;
+  background: var(--paper-raised);
+  border-color: var(--rule-strong);
+  border-radius: var(--radius);
+}
+
+.voz-vivo__espera {
+  font-style: italic;
+}
+
+.voz-vivo__cursor {
+  width: 1px;
+  background: var(--ink);
+}
+
+.voz-panel {
+  background: var(--paper-raised);
+  border-color: var(--rule-strong);
+  border-radius: var(--radius);
+}
+
+.voz-panel--aviso {
+  border-top: 1px solid var(--ink);
+}
+
+.voz-panel--aviso .voz-burbuja--vos {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.voz-panel--aviso .voz-burbuja--asistente {
+  font-weight: 500;
+}
+
+.voz-burbuja {
+  border-radius: var(--radius);
+}
