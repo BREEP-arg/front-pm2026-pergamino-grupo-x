@@ -32,6 +32,8 @@ function mensajeDeError(err: unknown): string {
 export function useAudioRecorder() {
   const [estado, setEstado] = useState<EstadoGrabador>('inactivo')
   const [error, setError] = useState<string | null>(null)
+  // Se expone para medir el volumen mientras se graba (el anillo del botón).
+  const [stream, setStream] = useState<MediaStream | null>(null)
 
   const recorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -52,6 +54,7 @@ export function useAudioRecorder() {
     }
     streamRef.current?.getTracks().forEach((track) => track.stop())
     streamRef.current = null
+    setStream(null)
   }, [])
 
   /** Suelta todo sin entregar audio. Se desenganchan los handlers antes de parar los tracks. */
@@ -104,6 +107,7 @@ export function useAudioRecorder() {
         return
       }
       streamRef.current = stream
+      setStream(stream)
 
       const mime = elegirMime()
       const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
@@ -172,5 +176,5 @@ export function useAudioRecorder() {
     return blob
   }, [])
 
-  return { estado, error, empezar, terminar }
+  return { estado, error, stream, empezar, terminar }
 }

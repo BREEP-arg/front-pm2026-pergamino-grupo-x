@@ -35,6 +35,12 @@ export interface SecretoAsistente {
   valor: string
 }
 
+/** Pantalla que acompaña la respuesta: el front la traduce a su ruta (ver voice/pantallas.ts). */
+export interface PantallaAsistente {
+  nombre: string
+  id: number | null
+}
+
 export interface RespuestaVoz {
   transcripcion: string | null
   respuesta: string
@@ -43,4 +49,6 @@ export interface RespuestaVoz {
   deshacer: AccionDeshacer | null
   pendiente: PendienteAsistente | null
   secreto: SecretoAsistente | null
+  /** Puede faltar si el servicio es anterior a este campo. */
+  pantalla?: PantallaAsistente | null
 }

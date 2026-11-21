@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../api/client'
 import { enviarVoz } from '../api/asistente'
 import { useToast } from '../components/useToast'
-import type { RespuestaVoz, SecretoAsistente, TurnoHistorial } from '../types/asistente'
+import type { PantallaAsistente, RespuestaVoz, SecretoAsistente, TurnoHistorial } from '../types/asistente'
 import { useAudioRecorder } from './useAudioRecorder'
 
 export type EstadoAsistente = 'listo' | 'escuchando' | 'pensando'
@@ -16,9 +16,13 @@ function mensajeDe(err: unknown): string {
 
 interface Params {
   alCambiar(): void
+  /** Se llama con cada respuesta nueva del asistente (para leerla en voz alta). */
+  alResponder?(texto: string): void
+  /** Se llama cuando la respuesta trae la pantalla que acompaña lo que hizo el asistente. */
+  alNavegar?(pantalla: PantallaAsistente): void
 }
 
-export function useAsistente({ alCambiar }: Params) {
+export function useAsistente({ alCambiar, alResponder, alNavegar }: Params) {
   const { showToast } = useToast()
   const grabador = useAudioRecorder()
   const [pensando, setPensando] = useState(false)
@@ -35,8 +39,12 @@ export function useAsistente({ alCambiar }: Params) {
   const historialRef = useRef<TurnoHistorial[]>([])
   const ocupadoRef = useRef(false)
   const alCambiarRef = useRef(alCambiar)
+  const alResponderRef = useRef(alResponder)
+  const alNavegarRef = useRef(alNavegar)
   useEffect(() => {
     alCambiarRef.current = alCambiar
+    alResponderRef.current = alResponder
+    alNavegarRef.current = alNavegar
   })
 
   // "Deshacer" se ofrece solo 10 segundos: al vencer se marca la respuesta como vencida.
@@ -71,8 +79,12 @@ export function useAsistente({ alCambiar }: Params) {
         registrar(r)
         setSecreto(r.secreto)
         setRespuesta({ ...r, secreto: null })
+        alResponderRef.current?.(r.respuesta)
         if (esConfirmacion || r.acciones.some((a) => a.ok && a.tipo !== 'lectura')) {
           alCambiarRef.current()
+        }
+        if (r.pantalla) {
+          alNavegarRef.current?.(r.pantalla)
         }
       } catch (err) {
         setError(mensajeDe(err))
@@ -110,7 +122,9 @@ export function useAsistente({ alCambiar }: Params) {
         return
       }
       if (!confirmado) {
-        setRespuesta({ ...respuesta, pendiente: null, deshacer: null, respuesta: 'Cancelado, no hice ningún cambio.' })
+        const cancelado = 'Cancelado, no hice ningún cambio.'
+        setRespuesta({ ...respuesta, pendiente: null, deshacer: null, respuesta: cancelado })
+        alResponderRef.current?.(cancelado)
         return
       }
       await procesar(
@@ -153,6 +167,7 @@ export function useAsistente({ alCambiar }: Params) {
 
   return {
     estado,
+    stream: grabador.stream,
     respuesta: respuestaVisible,
     error: error ?? grabador.error,
     panelAbierto,
